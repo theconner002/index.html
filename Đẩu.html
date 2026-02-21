@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>English Master Pro - Final iOS Fix</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50; --accent: #3498db; --success: #27ae60;
+            --danger: #e74c3c; --bg: #f4f7f6; --sidebar-width: 280px;
+        }
+        html, body { 
+            height: 100%; height: -webkit-fill-available;
+            margin: 0; padding: 0; overflow: hidden;
+            font-family: -apple-system, system-ui, sans-serif;
+            background-color: var(--bg); touch-action: manipulation;
+        }
+        body { display: flex; }
+
+        #sidebar {
+            width: var(--sidebar-width); background: var(--primary); color: white;
+            transition: 0.3s; padding: 20px; box-sizing: border-box;
+            position: relative; z-index: 100; display: flex; flex-direction: column;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+        }
+        #sidebar.collapsed { width: 0; padding: 0; margin-left: -280px; }
+        
+        .toggle-btn {
+            position: fixed; left: 280px; top: 15px; background: var(--primary);
+            color: white; border: none; width: 44px; height: 44px; cursor: pointer;
+            border-radius: 0 5px 5px 0; display: flex; align-items: center; justify-content: center; 
+            font-weight: bold; transition: 0.3s; z-index: 101; font-size: 20px;
+        }
+        #sidebar.collapsed + .toggle-btn { left: 0; }
+
+        .lang-switch {
+            display: flex; align-items: center; gap: 10px; cursor: pointer;
+            padding: 12px; background: rgba(255,255,255,0.1); border-radius: 8px; margin-bottom: 20px;
+        }
+        .lang-switch img { width: 22px; filter: invert(1); }
+
+        .panel-section { margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+        
+        input, button { 
+            width: 100%; padding: 12px; margin-top: 5px; border-radius: 8px; border: none; 
+            box-sizing: border-box; font-size: 16px; -webkit-appearance: none;
+        }
+        button { cursor: pointer; font-weight: bold; -webkit-tap-highlight-color: transparent; }
+        
+        #vocab-list { flex-grow: 1; overflow-y: auto; margin-top: 10px; }
+        .vocab-item { background: rgba(255,255,255,0.1); padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px; }
+        .del-btn { width: auto; padding: 6px 12px; background: var(--danger); color: white; }
+        
+        #game-container { flex-grow: 1; position: relative; display: flex; flex-direction: column; z-index: 10; width: 100%; }
+        #falling-area { flex-grow: 1; position: relative; background: white; overflow: hidden; }
+
+        .word-card {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            background: white; padding: 15px 25px; border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1); text-align: center;
+            border: 2px solid var(--accent); animation: fall linear forwards;
+            min-width: 200px; z-index: 20; 
+        }
+
+        @keyframes fall { from { top: -60px; } to { top: 80%; } }
+
+        .input-area {
+            height: 160px; background: white; border-top: 1px solid #ddd;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+            padding: 10px; padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        #answer-input { font-size: 24px; width: 95%; max-width: 785px; text-align: center; border: 3px solid var(--primary); border-radius: 50px; outline: none; }
+        .game-controls { display: flex; gap: 8px; width: 95%; max-width: 785px; }
+
+        .btn-start { background: var(--success); color: white; flex: 1; height: 50px; }
+        .excel-label { display: block; background: #f39c12; color: white; padding: 12px; text-align: center; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <aside id="sidebar">
+        <div id="btn-lang" class="lang-switch">
+            <img src="https://cdn-icons-png.flaticon.com/512/44/44386.png" alt="Globe">
+            <span id="lang-text">Tiếng Việt</span>
+        </div>
+
+        <div class="panel-section">
+            <label id="ui-speed">Tốc độ (giây):</label>
+            <input type="number" id="speed-input" value="10" inputmode="numeric">
+        </div>
+
+        <div class="panel-section">
+            <label for="excel-file" class="excel-label" id="ui-import">📁 Nạp File Excel</label>
+            <input type="file" id="excel-file" accept=".xlsx, .xls" style="opacity: 0; position: absolute; z-index: -1;">
+            <button id="ui-clear" style="background: #95a5a6; margin-top: 10px; color: white;">🗑 Xóa ngân hàng</button>
+        </div>
+
+        <div class="panel-section">
+            <small id="ui-quickadd">Thêm nhanh (Vocabulary/Form/Meaning):</small>
+            <input type="text" id="quick-add" placeholder="Từ/Loại/Nghĩa" autocapitalize="off" spellcheck="false">
+            <button id="btn-quick-add" style="background: #8e44ad; color: white; margin-top: 10px;">Thêm</button>
+        </div>
+
+        <input type="text" id="search-input" placeholder="🔍 Search...">
+        <div id="vocab-list"></div>
+    </aside>
+
+    <button class="toggle-btn" id="toggle-icon">◀</button>
+
+    <main id="game-container">
+        <div id="falling-area"></div>
+        <div class="input-area">
+            <input type="text" id="answer-input" autocomplete="off" disabled autocapitalize="off" spellcheck="false">
+            <div class="game-controls">
+                <button id="btn-game-main" class="btn-start">▶ BẮT ĐẦU</button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // TRÌNH QUẢN LÝ DỮ LIỆU CỐ ĐỊNH CHO IOS
+        let vocabulary = [];
+        try {
+            const saved = localStorage.getItem('vocab_v25');
+            vocabulary = saved ? JSON.parse(saved) : [];
+        } catch(e) { vocabulary = []; }
+
+        let currentLang = 'vi';
+        let isGameRunning = false;
+
+        // SELECTORS
+        const qaInput = document.getElementById('quick-add');
+        const qaBtn = document.getElementById('btn-quick-add');
+        const fileInput = document.getElementById('excel-file');
+        const listContainer = document.getElementById('vocab-list');
+
+        // HÀM LƯU DỮ LIỆU (FIX CHO IOS PRIVATE MODE)
+        function saveData() {
+            try {
+                localStorage.setItem('vocab_v25', JSON.stringify(vocabulary));
+            } catch(e) { console.error("Storage full or blocked"); }
+            renderVocab();
+        }
+
+        // FIX THÊM NHANH - SỬ DỤNG EVENT LISTENER TRỰC TIẾP
+        qaBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const val = qaInput.value.trim();
+            if (!val) return;
+
+            let parts = val.split('/');
+            if (parts.length < 3) parts = val.split(' ');
+
+            if (parts.length >= 3) {
+                const word = {
+                    en: parts[0].trim().toLowerCase(),
+                    type: parts[1].trim(),
+                    vn: parts.slice(2).join(" ").trim(),
+                    score: 100
+                };
+                vocabulary.push(word);
+                qaInput.value = '';
+                qaInput.blur(); // Ẩn bàn phím iPhone
+                saveData();
+            } else {
+                alert("Định dạng đúng: Vocabulary/Form/Meaning");
+            }
+        });
+
+        // FIX NẠP EXCEL - BẮT SỰ KIỆN CHANGE TRỰC TIẾP
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = e.target.result;
+                    const workbook = XLSX.read(data, { type: 'binary' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    jsonData.forEach((row, index) => {
+                        if (index > 0 && row[0] && row[2]) {
+                            vocabulary.push({
+                                en: String(row[0]).trim().toLowerCase(),
+                                type: row[1] ? String(row[1]).trim() : '',
+                                vn: String(row[2]).trim(),
+                                score: 100
+                            });
+                        }
+                    });
+                    saveData();
+                    alert("Đã nạp " + (jsonData.length - 1) + " từ!");
+                } catch (err) { alert("Lỗi file: " + err.message); }
+            };
+            reader.readAsBinaryString(file);
+        });
+
+        // RENDER DANH SÁCH
+        function renderVocab() {
+            const search = document.getElementById('search-input').value.toLowerCase();
+            listContainer.innerHTML = '';
+            
+            vocabulary.filter(i => i.en.includes(search) || i.vn.includes(search))
+            .slice(-20).reverse().forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = 'vocab-item';
+                div.innerHTML = `
+                    <div style="max-width:70%">
+                        <b>${item.en}</b> <small>(${item.type})</small><br>
+                        <span style="font-size:0.8em; opacity:0.8">${item.vn}</span>
+                    </div>
+                `;
+                const del = document.createElement('button');
+                del.innerText = 'X';
+                del.className = 'del-btn';
+                del.onclick = () => {
+                    vocabulary = vocabulary.filter(v => v !== item);
+                    saveData();
+                };
+                div.appendChild(del);
+                listContainer.appendChild(div);
+            });
+        }
+
+        // TOGGLE SIDEBAR FIX
+        document.getElementById('toggle-icon').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+            this.innerText = document.getElementById('sidebar').classList.contains('collapsed') ? "▶" : "◀";
+            this.style.left = document.getElementById('sidebar').classList.contains('collapsed') ? "0px" : "280px";
+        });
+
+        // INIT
+        renderVocab();
+        document.getElementById('search-input').oninput = renderVocab;
+        document.getElementById('ui-clear').onclick = () => { 
+            if(confirm("Xóa toàn bộ ngân hàng?")) { vocabulary = []; saveData(); }
+        };
+    </script>
+</body>
+</html>
